@@ -14,90 +14,124 @@ RESIZED_IMAGE_HEIGHT = 30
 
 ###################################################################################################
 def main():
-    imgTrainingNumbers = cv2.imread("training_chars.png")            # read in training numbers image
+    """
+    Hàm chính để tạo dữ liệu huấn luyện cho nhận dạng ký tự biển số xe.
+
+    Quy trình:
+    1. Đọc ảnh mẫu training_chars.png chứa các ký tự mẫu.
+    2. Xử lý ảnh: chuyển xám, làm mờ, ngưỡng hóa để tách ký tự.
+    3. Tìm contours (đường viền) của các ký tự.
+    4. Với mỗi contour đủ lớn, cắt ROI, resize và hiển thị để người dùng gán nhãn.
+    5. Lưu nhãn và dữ liệu ảnh phẳng vào file.
+
+    Kết quả:
+    - classifications.txt: Chứa nhãn của các ký tự (mã ASCII).
+    - flattened_images.txt: Chứa dữ liệu ảnh phẳng (20x30 = 600 pixel mỗi ảnh).
+    """
+    # Đọc ảnh mẫu chứa các ký tự huấn luyện
+    imgTrainingNumbers = cv2.imread("training_chars.png")
+    # Có thể resize nếu cần, nhưng hiện tại comment out
     #imgTrainingNumbers = cv2.resize(imgTrainingNumbers, dsize = None, fx = 0.5, fy = 0.5)
-    
-    imgGray = cv2.cvtColor(imgTrainingNumbers, cv2.COLOR_BGR2GRAY)          # get grayscale image
-    imgBlurred = cv2.GaussianBlur(imgGray, (5,5), 0)                        # blur
 
-                                                        # filter image from grayscale to black and white
-    imgThresh = cv2.adaptiveThreshold(imgBlurred,                           # input image
-                                      255,                                  # make pixels that pass the threshold full white
-                                      cv2.ADAPTIVE_THRESH_GAUSSIAN_C,       # use gaussian rather than mean, seems to give better results
-                                      cv2.THRESH_BINARY_INV,                # invert so foreground will be white, background will be black
-                                      11,                                   # size of a pixel neighborhood used to calculate threshold value
-                                      2)                                    # constant subtracted from the mean or weighted mean
+    # Chuyển ảnh sang xám để xử lý đơn giản hơn
+    imgGray = cv2.cvtColor(imgTrainingNumbers, cv2.COLOR_BGR2GRAY)
+    # Làm mờ bằng Gauss để giảm nhiễu
+    imgBlurred = cv2.GaussianBlur(imgGray, (5,5), 0)
 
-    cv2.imshow("imgThresh", imgThresh)      # show threshold image for reference
+    # Ngưỡng hóa thích ứng để chuyển thành ảnh nhị phân (chữ trắng, nền đen)
+    imgThresh = cv2.adaptiveThreshold(imgBlurred,
+                                       255,
+                                       cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                       cv2.THRESH_BINARY_INV,
+                                       11,
+                                       2)
 
-    imgThreshCopy = imgThresh.copy()        # make a copy of the thresh image, this in necessary b/c findContours modifies the image
+    # Hiển thị ảnh ngưỡng để kiểm tra
+    cv2.imshow("imgThresh", imgThresh)
 
-    npaContours, hierarchy = cv2.findContours(imgThreshCopy,        # input image, make sure to use a copy since the function will modify this image in the course of finding contours
-                                                 cv2.RETR_EXTERNAL,                 # retrieve the outermost contours only
-                                                 cv2.CHAIN_APPROX_SIMPLE)           # compress horizontal, vertical, and diagonal segments and leave only their end points
+    # Sao chép ảnh ngưỡng để tìm contours
+    imgThreshCopy = imgThresh.copy()
 
-                                # declare empty numpy array, we will use this to write to file later
-                                # zero rows, enough cols to hold all image data
+    # Tìm contours (đường viền) của các ký tự
+    npaContours, hierarchy = cv2.findContours(imgThreshCopy,
+                                              cv2.RETR_EXTERNAL,
+                                              cv2.CHAIN_APPROX_SIMPLE)
+
+    # Khởi tạo mảng để lưu ảnh phẳng (flattened images)
     npaFlattenedImages =  np.empty((0, RESIZED_IMAGE_WIDTH * RESIZED_IMAGE_HEIGHT))
-   
 
-    intClassifications = []         # declare empty classifications list, this will be our list of how we are classifying our chars from user input, we will write to file at the end
+    # Danh sách lưu nhãn (classifications) của các ký tự
+    intClassifications = []
 
-                                    # possible chars we are interested in are digits 0 through 9, put these in list intValidChars
+    # Danh sách các ký tự hợp lệ bao gồm chữ số từ 0 đến 9 và chữ cái từ A đến Z, được biểu diễn bằng mã ASCII
     intValidChars = [ord('0'), ord('1'), ord('2'), ord('3'), ord('4'), ord('5'), ord('6'), ord('7'), ord('8'), ord('9'),
-                     ord('A'), ord('B'), ord('C'), ord('D'), ord('E'), ord('F'), ord('G'), ord('H'), ord('I'), ord('J'),
-                     ord('K'), ord('L'), ord('M'), ord('N'), ord('O'), ord('P'), ord('Q'), ord('R'), ord('S'), ord('T'),
-                     ord('U'), ord('V'), ord('W'), ord('X'), ord('Y'), ord('Z')] #Là mã ascii của mấy chữ này
+                      ord('A'), ord('B'), ord('C'), ord('D'), ord('E'), ord('F'), ord('G'), ord('H'), ord('I'), ord('J'),
+                      ord('K'), ord('L'), ord('M'), ord('N'), ord('O'), ord('P'), ord('Q'), ord('R'), ord('S'), ord('T'),
+                      ord('U'), ord('V'), ord('W'), ord('X'), ord('Y'), ord('Z')]
 
-    for npaContour in npaContours:                          # for each contour
-        if cv2.contourArea(npaContour) > MIN_CONTOUR_AREA:          # if contour is big enough to consider
-            [intX, intY, intW, intH] = cv2.boundingRect(npaContour)         # get and break out bounding rect
+    # Duyệt qua từng contour
+    for npaContour in npaContours:
+        # Chỉ xử lý contour có diện tích > MIN_CONTOUR_AREA để loại bỏ nhiễu
+        if cv2.contourArea(npaContour) > MIN_CONTOUR_AREA:
+            # Lấy bounding box của contour
+            [intX, intY, intW, intH] = cv2.boundingRect(npaContour)
 
-                                                # draw rectangle around each contour as we ask user for input
-            cv2.rectangle(imgTrainingNumbers,           # draw rectangle on original training image
-                          (intX, intY),                 # upper left corner
-                          (intX+intW,intY+intH),        # lower right corner
-                          (0, 0, 255),                  # red
-                          2)                            # thickness
+            # Vẽ hình chữ nhật đỏ quanh ký tự trên ảnh gốc
+            cv2.rectangle(imgTrainingNumbers,
+                           (intX, intY),
+                           (intX+intW,intY+intH),
+                           (0, 0, 255),
+                           2)
 
-            imgROI = imgThresh[intY:intY+intH, intX:intX+intW]                                  # crop char out of threshold image
-            imgROIResized = cv2.resize(imgROI, (RESIZED_IMAGE_WIDTH, RESIZED_IMAGE_HEIGHT))     # resize image, this will be more consistent for recognition and storage
+            # Cắt vùng quan tâm (ROI) từ ảnh ngưỡng
+            imgROI = imgThresh[intY:intY+intH, intX:intX+intW]
+            # Resize ROI về kích thước chuẩn 20x30
+            imgROIResized = cv2.resize(imgROI, (RESIZED_IMAGE_WIDTH, RESIZED_IMAGE_HEIGHT))
 
-            cv2.imshow("imgROI", imgROI)                    # show cropped out char for reference
-            cv2.imshow("imgROIResized", imgROIResized)      # show resized image for reference
-            
-            cv2.imshow("training_numbers.png", imgTrainingNumbers)      # show training numbers image, this will now have red rectangles drawn on it
+            # Hiển thị ROI gốc và resized
+            cv2.imshow("imgROI", imgROI)
+            cv2.imshow("imgROIResized", imgROIResized)
 
-            intChar = cv2.waitKey(0)                     # get key press
+            # Hiển thị ảnh gốc với bounding box
+            cv2.imshow("training_numbers.png", imgTrainingNumbers)
 
-            if intChar == 27:                   # if esc key was pressed
-                sys.exit()                      # exit program
-            elif intChar in intValidChars:      # else if the char is in the list of chars we are looking for . . .
+            # Chờ người dùng nhấn phím để gán nhãn
+            intChar = cv2.waitKey(0)
 
-                intClassifications.append(intChar)        # append classification char to integer list of chars (we will convert to float later before writing to file)
-                #Là file chứa label của tất cả các ảnh mẫu, tổng cộng có 32 x 5 = 160 mẫu.
-                npaFlattenedImage = imgROIResized.reshape((1, RESIZED_IMAGE_WIDTH * RESIZED_IMAGE_HEIGHT))  # flatten image to 1d numpy array so we can write to file later
-                
-                npaFlattenedImages = np.append(npaFlattenedImages, npaFlattenedImage, 0)                    # add current flattened impage numpy array to list of flattened image numpy arrays
-                
+            # Nếu nhấn ESC, thoát chương trình
+            if intChar == 27:
+                sys.exit()
+            # Nếu phím nhấn là ký tự hợp lệ, lưu nhãn và dữ liệu ảnh
+            elif intChar in intValidChars:
+                # Thêm nhãn vào danh sách
+                intClassifications.append(intChar)
+                # Chuyển ảnh resized thành vector phẳng (1x600)
+                npaFlattenedImage = imgROIResized.reshape((1, RESIZED_IMAGE_WIDTH * RESIZED_IMAGE_HEIGHT))
+                # Thêm vào mảng tổng
+                npaFlattenedImages = np.append(npaFlattenedImages, npaFlattenedImage, 0)
+
             # end if
         # end if
     # end for
 
-    fltClassifications = np.array(intClassifications, np.float32)                   # convert classifications list of ints to numpy array of floats
-    
-    npaClassifications = fltClassifications.reshape((fltClassifications.size, 1))   # flatten numpy array of floats to 1d so we can write to file later
+    # Chuyển danh sách nhãn thành numpy array kiểu float32
+    fltClassifications = np.array(intClassifications, np.float32)
+    # Reshape thành cột (n, 1)
+    npaClassifications = fltClassifications.reshape((fltClassifications.size, 1))
 
-    print ("\n\ntraining complete !!\n")
+    # In thông báo hoàn thành
+    print ("\n\nHoàn thành huấn luyện !!\n")
 
-    np.savetxt("classifications.txt", npaClassifications)           # write flattened images to file
-    np.savetxt("flattened_images.txt", npaFlattenedImages)          #
+    # Lưu nhãn vào file classifications.txt
+    np.savetxt("classifications.txt", npaClassifications)
+    # Lưu dữ liệu ảnh phẳng vào flattened_images.txt
+    np.savetxt("flattened_images.txt", npaFlattenedImages)
 
-    cv2.destroyAllWindows()             # remove windows from memory
+    # Đóng tất cả cửa sổ OpenCV
+    cv2.destroyAllWindows()
 
     return
 
 ###################################################################################################
 if __name__ == "__main__":
     main()
-# end if

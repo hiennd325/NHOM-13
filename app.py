@@ -2,7 +2,6 @@ import streamlit as st
 import cv2
 import numpy as np
 from PIL import Image
-from process_image import process_image
 
 st.title("Nhận diện biển số xe nhóm 13")
 

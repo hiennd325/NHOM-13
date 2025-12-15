@@ -34,7 +34,7 @@ RESIZED_IMAGE_WIDTH = 20
 RESIZED_IMAGE_HEIGHT = 30
 
 # Đọc ảnh đầu vào và resize về 1920x1080 để xử lý
-img = cv2.imread("data/image/1.jpg")
+img = cv2.imread("data/image/0041_00486_b.jpg")
 img = cv2.resize(img, dsize=(1920, 1080))
 
 
